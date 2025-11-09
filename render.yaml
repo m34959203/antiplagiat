@@ -1,6 +1,5 @@
-﻿# Render.com автоматический деплой
 services:
-  # Frontend (Next.js)
+  # Frontend (Next.js + TypeScript)
   - type: web
     name: antiplagiat-frontend
     env: node
@@ -27,12 +26,7 @@ services:
         value: 3.12.0
       - key: PORT
         value: 10000
-      - key: DATABASE_URL
-        fromDatabase:
-          name: antiplagiat-db
-          property: connectionString
 
-# База данных PostgreSQL (бесплатно)
 databases:
   - name: antiplagiat-db
     plan: free

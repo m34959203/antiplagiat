@@ -1,5 +1,5 @@
-﻿export default function Home() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
+export default function Home() {
+  const apiUrl: string = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
   
   return (
     <main style={{
@@ -52,7 +52,8 @@
             <li>🚀 Fast & Deep Analysis Modes</li>
             <li>🧠 ML-Powered Detection</li>
             <li>📊 Detailed Reports</li>
-            <li>🌍 Multi-language Support</li>
+            <li>🌍 Multi-language Support (RU/EN)</li>
+            <li>⚡ Built with TypeScript</li>
           </ul>
         </div>
         
@@ -75,14 +76,12 @@
               boxShadow: '0 4px 6px rgba(0,0,0,0.2)',
               transition: 'transform 0.2s'
             }}
-            onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-            onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
             Start Check
           </a>
           
           <a 
-            href={apiUrl + '/docs'} 
+            href={`${apiUrl}/docs`}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -106,7 +105,7 @@
           opacity: 0.8,
           fontSize: '0.9rem'
         }}>
-          Deployed on Render.com 🚀
+          Powered by Next.js + TypeScript + FastAPI
         </p>
       </div>
     </main>

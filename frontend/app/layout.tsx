@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Antiplagiat - AI Plagiarism Detection',
-  description: 'Production-grade plagiarism detection platform with ML-powered analysis',
+  title: 'Antiplagiat - Проверка текста на уникальность',
+  description: 'AI-powered проверка текстов на плагиат. Быстро, точно, бесплатно. Поддержка русского и английского языков.',
 }
 
 export default function RootLayout({
@@ -11,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0, padding: 0 }}>{children}</body>
+    <html lang="ru">
+      <body>{children}</body>
     </html>
   )
 }

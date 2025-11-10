@@ -14,11 +14,18 @@ node_modules/
 out/
 npm-debug.log*
 
-# Environment variables
+# Environment - IMPORTANT!
 .env
 .env.local
 .env.production
+backend/public-api/.env
+frontend/.env.local
 !.env.example
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
 # Secrets
 *.pem
@@ -40,3 +47,7 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# Backups
+backup_*/
+*.backup_*

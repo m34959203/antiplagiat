@@ -1,15 +1,40 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { apiClient } from '@/lib/api'
 
 export default function Home() {
+  const router = useRouter()
   const [text, setText] = useState('')
+  const [isChecking, setIsChecking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  
   const charCount = text.length
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length
 
+  const handleCheck = async () => {
+    setError(null)
+    setIsChecking(true)
+
+    try {
+      const result = await apiClient.createCheck({
+        text,
+        mode: 'fast',
+        lang: 'ru'
+      })
+
+      // Редирект на страницу результатов
+      router.push(`/report/${result.task_id}`)
+    } catch (err: any) {
+      setError(err.message)
+      setIsChecking(false)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(to bottom, #ffffff, #f7fafc)' }}>
-      {/* Header */}
+      {/* ... Header остается тот же ... */}
       <header style={{
         background: 'rgba(255, 255, 255, 0.95)',
         backdropFilter: 'blur(10px)',
@@ -32,18 +57,7 @@ export default function Home() {
           </div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
             <a href="#features" style={{ color: '#4a5568', textDecoration: 'none' }}>Возможности</a>
-            <a href="#pricing" style={{ color: '#4a5568', textDecoration: 'none' }}>Цены</a>
-            <button style={{
-              padding: '0.5rem 1.5rem',
-              background: '#3182ce',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}>
-              Войти
-            </button>
+            <a href="https://antiplagiat-api.onrender.com/docs" target="_blank" style={{ color: '#4a5568', textDecoration: 'none' }}>API</a>
           </nav>
         </div>
       </header>
@@ -80,6 +94,7 @@ export default function Home() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Вставьте текст для проверки (минимум 100 символов)..."
+            disabled={isChecking}
             style={{
               width: '100%',
               minHeight: '200px',
@@ -91,10 +106,21 @@ export default function Home() {
               resize: 'vertical',
               outline: 'none'
             }}
-            onFocus={(e) => e.target.style.borderColor = '#3182ce'}
-            onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
           />
           
+          {error && (
+            <div style={{
+              marginTop: '1rem',
+              padding: '0.75rem',
+              background: '#fed7d7',
+              color: '#c53030',
+              borderRadius: '8px',
+              fontSize: '0.875rem'
+            }}>
+              ❌ {error}
+            </div>
+          )}
+
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -107,30 +133,21 @@ export default function Home() {
               {charCount} символов • {wordCount} слов
             </div>
             <button
-              disabled={charCount < 100}
+              onClick={handleCheck}
+              disabled={charCount < 100 || isChecking}
               style={{
                 padding: '1rem 2rem',
-                background: charCount < 100 ? '#cbd5e0' : 'linear-gradient(135deg, #3182ce, #2c5282)',
+                background: charCount < 100 || isChecking ? '#cbd5e0' : 'linear-gradient(135deg, #3182ce, #2c5282)',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
                 fontSize: '1.125rem',
                 fontWeight: '600',
-                cursor: charCount < 100 ? 'not-allowed' : 'pointer',
+                cursor: charCount < 100 || isChecking ? 'not-allowed' : 'pointer',
                 transition: 'all 0.3s'
               }}
-              onMouseEnter={(e) => {
-                if (charCount >= 100) {
-                  e.currentTarget.style.transform = 'translateY(-2px)'
-                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(49, 130, 206, 0.4)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)'
-                e.currentTarget.style.boxShadow = 'none'
-              }}
             >
-              🚀 Проверить бесплатно
+              {isChecking ? '⏳ Проверяем...' : '🚀 Проверить бесплатно'}
             </button>
           </div>
 
@@ -149,11 +166,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Stats */}
-      <section style={{
-        background: 'white',
-        padding: '4rem 2rem'
-      }}>
+      {/* Stats - тот же код */}
+      <section style={{ background: 'white', padding: '4rem 2rem' }}>
         <div style={{
           maxWidth: '1200px',
           margin: '0 auto',
@@ -171,8 +185,7 @@ export default function Home() {
               padding: '2rem',
               borderRadius: '12px',
               textAlign: 'center',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
-              transition: 'transform 0.3s, box-shadow 0.3s'
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)'
             }}>
               <div style={{
                 fontSize: '2.5rem',
@@ -188,7 +201,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Features */}
+      {/* Features - тот же код */}
       <section id="features" style={{
         maxWidth: '1200px',
         margin: '0 auto',
@@ -229,7 +242,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer */}
+      {/* Footer - тот же */}
       <footer style={{
         background: '#1a202c',
         color: '#a0aec0',
@@ -238,43 +251,13 @@ export default function Home() {
         <div style={{
           maxWidth: '1200px',
           margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '2rem',
-          marginBottom: '2rem'
+          textAlign: 'center'
         }}>
-          <div>
-            <div style={{ color: 'white', fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' }}>
-              🔍 Antiplagiat
-            </div>
-            <p style={{ fontSize: '0.875rem' }}>Профессиональная проверка текстов</p>
+          <div style={{ marginBottom: '1rem' }}>
+            <span style={{ fontSize: '2rem' }}>🔍</span>
+            <span style={{ color: 'white', fontSize: '1.25rem', fontWeight: 'bold', marginLeft: '0.5rem' }}>Antiplagiat</span>
           </div>
-          <div>
-            <h4 style={{ color: 'white', marginBottom: '1rem' }}>Продукт</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
-              <a href="#" style={{ color: '#a0aec0', textDecoration: 'none' }}>Возможности</a>
-              <a href="#" style={{ color: '#a0aec0', textDecoration: 'none' }}>Цены</a>
-              <a href="/docs" style={{ color: '#a0aec0', textDecoration: 'none' }}>API</a>
-            </div>
-          </div>
-          <div>
-            <h4 style={{ color: 'white', marginBottom: '1rem' }}>Поддержка</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
-              <a href="#" style={{ color: '#a0aec0', textDecoration: 'none' }}>Справка</a>
-              <a href="#" style={{ color: '#a0aec0', textDecoration: 'none' }}>Документация</a>
-              <a href="#" style={{ color: '#a0aec0', textDecoration: 'none' }}>Контакты</a>
-            </div>
-          </div>
-        </div>
-        <div style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          paddingTop: '2rem',
-          borderTop: '1px solid #2d3748',
-          textAlign: 'center',
-          fontSize: '0.875rem'
-        }}>
-          © 2025 Antiplagiat. Powered by AI & TypeScript
+          <p style={{ fontSize: '0.875rem' }}>© 2025 Antiplagiat. Powered by AI & TypeScript</p>
         </div>
       </footer>
     </div>

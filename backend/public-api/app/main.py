@@ -1,5 +1,5 @@
 """
-Antiplagiat API - с улучшенной детекцией
+Antiplagiat API - Google Search Integration
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,6 @@ from datetime import datetime
 import logging
 
 from app.core.config import settings
-from app.services.ai import ai_service
 from app.services.detector import detector
 from app.models import CheckResult, get_db, init_db
 
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="AI-powered plagiarism detection",
+    description="AI-powered plagiarism detection using Google Search",
     docs_url="/docs",
     redoc_url="/redoc",
     debug=settings.DEBUG
@@ -74,6 +73,7 @@ class CheckResultResponse(BaseModel):
     sources: Optional[List[dict]] = None
     created_at: Optional[str] = None
     ai_powered: bool = False
+    note: Optional[str] = None
 
 @app.get("/")
 async def root():
@@ -81,7 +81,7 @@ async def root():
         "service": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
-        "ai_enabled": bool(settings.OPENROUTER_API_KEY),
+        "google_search_enabled": bool(detector.google_api_key and detector.google_cx),
         "status": "running",
         "docs": "/docs"
     }
@@ -97,7 +97,7 @@ async def health(db: Session = Depends(get_db)):
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "ai_enabled": bool(settings.OPENROUTER_API_KEY),
+        "google_search_enabled": bool(detector.google_api_key and detector.google_cx),
         "database": db_status,
         "environment": settings.ENVIRONMENT
     }
@@ -108,12 +108,16 @@ async def create_check(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """Create plagiarism check with advanced detection"""
+    """
+    Проверка текста на плагиат
+    
+    Fast режим: быстрая эвристика (mock)
+    Deep режим: Google Search (реальная детекция)
+    """
     task_id = str(uuid.uuid4())
     
-    # Используем новый детектор
-    use_google = request.mode == "deep"  # Google только в Deep режиме
-    result = detector.analyze(request.text, use_google=use_google)
+    # Анализ через новый детектор
+    result = detector.analyze(request.text, mode=request.mode)
     
     total_words = len(request.text.split())
     total_chars = len(request.text)
@@ -122,20 +126,21 @@ async def create_check(
     db_result = CheckResult(
         task_id=task_id,
         status="completed",
-        originality=result['originality'],
+        originality=result.get('originality', 0),
         total_words=total_words,
         total_chars=total_chars,
-        matches=result['matches'],
-        sources=result['sources'],
+        matches=result.get('matches', []),
+        sources=result.get('sources', []),
         ai_powered=result.get('google_used', False),
         created_at=datetime.utcnow()
     )
     db.add(db_result)
     db.commit()
     
-    estimated_time = 15 if request.mode == "deep" else 5
+    estimated_time = 15 if request.mode == "deep" else 3
     
-    logger.info(f"✓ Check {task_id}: {result['originality']}%, {len(result['matches'])} matches, Google: {result.get('google_used', False)}")
+    google_status = "✓" if result.get('google_used') else "✗"
+    logger.info(f"{google_status} Check {task_id}: {result.get('originality')}%, mode={request.mode}, google={result.get('google_used', False)}, matches={len(result.get('matches', []))}")
     
     return CheckResponse(
         task_id=task_id,
@@ -145,6 +150,7 @@ async def create_check(
 
 @app.get("/api/v1/check/{task_id}", response_model=CheckResultResponse)
 async def get_check_result(task_id: str, db: Session = Depends(get_db)):
+    """Получение результатов проверки"""
     result = db.query(CheckResult).filter(CheckResult.task_id == task_id).first()
     if not result:
         raise HTTPException(status_code=404, detail="Check not found")
@@ -158,11 +164,13 @@ async def get_check_result(task_id: str, db: Session = Depends(get_db)):
         matches=result.matches,
         sources=result.sources,
         created_at=result.created_at.isoformat() if result.created_at else None,
-        ai_powered=result.ai_powered
+        ai_powered=result.ai_powered,
+        note="Deep режим использует Google Search для реальной детекции" if result.ai_powered else "Fast режим - для точной проверки используйте Deep"
     )
 
 @app.delete("/api/v1/check/{task_id}")
 async def delete_check(task_id: str, db: Session = Depends(get_db)):
+    """Удаление проверки"""
     result = db.query(CheckResult).filter(CheckResult.task_id == task_id).first()
     if result:
         db.delete(result)

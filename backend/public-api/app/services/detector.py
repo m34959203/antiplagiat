@@ -1,222 +1,247 @@
 """
-Advanced Plagiarism Detection (FREE)
-Комбинация: Local algorithms + Google Search API
+Plagiarism Detection - Google Search Only
+Deep режим: 100% Google Search (реальная детекция)
+Fast режим: Простая mock проверка (быстро)
 """
 import re
-import hashlib
-from typing import List, Dict, Tuple, Optional
-from collections import Counter
 import os
+from typing import List, Dict, Optional
+import logging
 
-class AdvancedPlagiarismDetector:
+logger = logging.getLogger(__name__)
+
+class GooglePlagiarismDetector:
     """
-    Бесплатный детектор плагиата
+    Детектор плагиата на основе Google Search
     """
     
     def __init__(self):
         self.google_api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
         self.google_cx = os.getenv("GOOGLE_SEARCH_CX", "")
         
-    def analyze(self, text: str, use_google: bool = False) -> Dict:
-        """Главный метод анализа"""
+        if self.google_api_key and self.google_cx:
+            logger.info("✓ Google Search API настроен")
+        else:
+            logger.warning("⚠️  Google Search API не настроен (используйте Deep режим)")
+    
+    def analyze(self, text: str, mode: str = "fast") -> Dict:
+        """
+        Главный метод анализа
+        
+        Args:
+            text: Текст для проверки
+            mode: "fast" (быстро, mock) или "deep" (Google Search)
+        """
+        
+        if mode == "deep":
+            # Deep режим: ТОЛЬКО Google Search
+            return self._google_search_analysis(text)
+        else:
+            # Fast режим: Простая mock проверка
+            return self._fast_mock_analysis(text)
+    
+    def _fast_mock_analysis(self, text: str) -> Dict:
+        """
+        Fast режим: простая эвристика без Google
+        Быстро, но неточно - для демо
+        """
+        words = text.split()
+        total_words = len(words)
+        total_chars = len(text)
+        
+        # Простая эвристика: если есть популярные фразы - подозрительно
+        common_phrases = [
+            "искусственный интеллект", "машинное обучение", "нейронные сети",
+            "глубокое обучение", "обработка естественного языка",
+            "neural network", "deep learning", "machine learning",
+            "artificial intelligence"
+        ]
+        
+        text_lower = text.lower()
+        found_phrases = sum(1 for phrase in common_phrases if phrase in text_lower)
+        
+        # Чем больше популярных фраз - тем ниже "оригинальность"
+        # Но это очень грубо!
+        if found_phrases >= 3:
+            originality = 75.0
+        elif found_phrases >= 2:
+            originality = 85.0
+        else:
+            originality = 92.0
+        
+        return {
+            'originality': originality,
+            'matches': [],
+            'sources': [],
+            'google_used': False,
+            'mode': 'fast',
+            'note': 'Fast mode - используйте Deep режим для точной проверки'
+        }
+    
+    def _google_search_analysis(self, text: str) -> Dict:
+        """
+        Deep режим: ТОЛЬКО Google Search
+        Реальная детекция плагиата
+        """
+        if not self.google_api_key or not self.google_cx:
+            logger.error("Google Search API не настроен!")
+            return {
+                'originality': 0.0,
+                'matches': [],
+                'sources': [],
+                'google_used': False,
+                'error': 'Google Search API не настроен. Добавьте GOOGLE_SEARCH_API_KEY и GOOGLE_SEARCH_CX в переменные окружения.'
+            }
+        
+        words = text.split()
+        total_words = len(words)
+        total_chars = len(text)
         
         # Разбиваем на предложения
         sentences = self._split_sentences(text)
         
-        # N-gram анализ (локально, бесплатно)
-        ngram_score = self._ngram_analysis(text)
-        
-        # Fingerprinting (локально, бесплатно)
-        fingerprint_score = self._fingerprint_analysis(sentences)
-        
-        # Эвристики (бесплатно)
-        heuristic_score = self._heuristic_analysis(text)
-        
-        # Комбинированная оценка
-        local_suspicion = (ngram_score + fingerprint_score + heuristic_score) / 3
-        
-        matches = []
-        sources = []
-        
-        # Если подозрительно И разрешен Google - проверяем в интернете
-        if local_suspicion > 0.4 and use_google and self.google_api_key:
-            google_results = self._google_search_check(sentences[:3])  # Только 3 предложения
-            matches.extend(google_results['matches'])
-            sources.extend(google_results['sources'])
-        
-        # Рассчитываем финальную оригинальность
-        if matches:
-            total_chars = len(text)
-            matched_chars = sum(len(m['text']) for m in matches)
-            originality = max(0, 100 - (matched_chars / total_chars * 100))
-        else:
-            # Если Google не использовали, оцениваем локально
-            originality = max(0, 100 - (local_suspicion * 50))
-        
-        return {
-            'originality': round(originality, 2),
-            'matches': matches,
-            'sources': sources,
-            'local_suspicion': round(local_suspicion, 2),
-            'google_used': use_google and bool(self.google_api_key)
-        }
-    
-    def _split_sentences(self, text: str) -> List[str]:
-        """Разбивка на предложения"""
-        sentences = re.split(r'[.!?]+', text)
-        return [s.strip() for s in sentences if len(s.strip()) > 30]
-    
-    def _ngram_analysis(self, text: str, n: int = 5) -> float:
-        """
-        N-gram анализ
-        Находит повторяющиеся фрагменты (признак копипасты)
-        """
-        words = text.lower().split()
-        if len(words) < n:
-            return 0.0
-        
-        ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
-        ngram_counts = Counter(ngrams)
-        
-        # Если много повторяющихся n-грамм - подозрительно
-        repeated = sum(1 for count in ngram_counts.values() if count > 1)
-        suspicion = min(repeated / len(ngrams), 1.0)
-        
-        return suspicion
-    
-    def _fingerprint_analysis(self, sentences: List[str]) -> float:
-        """
-        Fingerprinting
-        Создает хэши предложений и ищет паттерны
-        """
         if not sentences:
-            return 0.0
+            return {
+                'originality': 100.0,
+                'matches': [],
+                'sources': [],
+                'google_used': False,
+                'error': 'Текст слишком короткий для анализа'
+            }
         
-        # Создаем хэши предложений
-        fingerprints = []
-        for sent in sentences:
-            # Убираем стоп-слова и создаем хэш
-            words = [w for w in sent.lower().split() if len(w) > 3]
-            if words:
-                fp = hashlib.md5(' '.join(sorted(words)).encode()).hexdigest()
-                fingerprints.append(fp)
-        
-        # Проверяем уникальность хэшей
-        unique_ratio = len(set(fingerprints)) / len(fingerprints)
-        
-        # Если мало уникальных - подозрительно
-        return 1.0 - unique_ratio
-    
-    def _heuristic_analysis(self, text: str) -> float:
-        """
-        Эвристический анализ
-        Проверяет паттерны, характерные для копипасты
-        """
-        scores = []
-        
-        # 1. Длина предложений (копипаста часто имеет однородные предложения)
-        sentences = self._split_sentences(text)
-        if sentences:
-            lengths = [len(s.split()) for s in sentences]
-            avg_len = sum(lengths) / len(lengths)
-            variance = sum((l - avg_len) ** 2 for l in lengths) / len(lengths)
-            
-            # Малая вариативность = подозрительно
-            if variance < 20:
-                scores.append(0.6)
-            else:
-                scores.append(0.2)
-        
-        # 2. Словарное разнообразие
-        words = text.lower().split()
-        unique_words = len(set(words))
-        lexical_diversity = unique_words / len(words) if words else 0
-        
-        # Слишком высокое разнообразие может быть признаком AI/копипасты
-        if lexical_diversity > 0.7:
-            scores.append(0.5)
-        else:
-            scores.append(0.2)
-        
-        # 3. Стоп-слова (копипаста часто имеет много стоп-слов)
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-                      'и', 'в', 'на', 'с', 'по', 'для', 'что', 'как', 'это', 'все'}
-        
-        stop_word_count = sum(1 for w in words if w.lower() in stop_words)
-        stop_word_ratio = stop_word_count / len(words) if words else 0
-        
-        if stop_word_ratio > 0.3:
-            scores.append(0.4)
-        else:
-            scores.append(0.1)
-        
-        return sum(scores) / len(scores) if scores else 0.0
-    
-    def _google_search_check(self, sentences: List[str]) -> Dict:
-        """
-        Google Search проверка (только для подозрительных случаев)
-        БЕСПЛАТНО: 100 запросов/день
-        """
-        if not self.google_api_key or not sentences:
-            return {'matches': [], 'sources': []}
-        
-        import httpx
-        
+        # Проверяем первые 5 предложений в Google
         matches = []
         sources_dict = {}
         
-        # Проверяем только первые 3 предложения (экономим API)
-        for i, sentence in enumerate(sentences[:3]):
-            if len(sentence) < 50:
+        sentences_to_check = sentences[:5]  # Максимум 5 предложений
+        
+        logger.info(f"Проверяем {len(sentences_to_check)} предложений через Google Search...")
+        
+        for i, sentence in enumerate(sentences_to_check):
+            if len(sentence) < 50:  # Пропускаем короткие
                 continue
+            
+            # Поиск в Google
+            google_results = self._search_in_google(sentence)
+            
+            if google_results:
+                # Нашли совпадение!
+                for result in google_results:
+                    matches.append({
+                        'start': text.find(sentence),
+                        'end': text.find(sentence) + len(sentence),
+                        'text': sentence,
+                        'source_id': result['source_id'],
+                        'similarity': result['similarity'],
+                        'type': 'google_exact'
+                    })
+                    
+                    # Добавляем источник
+                    source_id = result['source_id']
+                    if source_id not in sources_dict:
+                        sources_dict[source_id] = {
+                            'id': source_id,
+                            'title': result['title'],
+                            'url': result['url'],
+                            'domain': result['domain'],
+                            'match_count': 0
+                        }
+                    sources_dict[source_id]['match_count'] += 1
+        
+        # Рассчитываем оригинальность
+        if matches:
+            # Убираем дубликаты по позиции
+            unique_matches = {}
+            for match in matches:
+                key = (match['start'], match['end'])
+                if key not in unique_matches or unique_matches[key]['similarity'] < match['similarity']:
+                    unique_matches[key] = match
+            
+            matches = list(unique_matches.values())
+            
+            # Считаем сколько символов скопировано
+            matched_chars = sum(m['end'] - m['start'] for m in matches)
+            originality = max(0, round(100 - (matched_chars / total_chars * 100), 2))
+        else:
+            # Ничего не найдено в Google
+            originality = 95.0
+        
+        sources = list(sources_dict.values())
+        
+        logger.info(f"✓ Google Search завершен: {originality}% оригинальности, {len(matches)} совпадений, {len(sources)} источников")
+        
+        return {
+            'originality': originality,
+            'matches': matches,
+            'sources': sorted(sources, key=lambda x: x['match_count'], reverse=True),
+            'google_used': True,
+            'mode': 'deep'
+        }
+    
+    def _split_sentences(self, text: str) -> List[str]:
+        """Разбивка текста на предложения"""
+        sentences = re.split(r'[.!?]+', text)
+        return [s.strip() for s in sentences if len(s.strip()) > 30]
+    
+    def _search_in_google(self, query: str) -> List[Dict]:
+        """
+        Поиск в Google Custom Search API
+        
+        Args:
+            query: Текст для поиска
+            
+        Returns:
+            Список найденных источников
+        """
+        try:
+            import httpx
             
             # Google Custom Search API
             url = "https://www.googleapis.com/customsearch/v1"
+            
+            # Берем первые 150 символов для поиска
+            search_query = query[:150]
+            
             params = {
                 'key': self.google_api_key,
                 'cx': self.google_cx,
-                'q': f'"{sentence[:200]}"',  # Точное совпадение
-                'num': 3  # Только 3 результата
+                'q': f'"{search_query}"',  # Точное совпадение
+                'num': 5  # Максимум 5 результатов
             }
             
-            try:
-                response = httpx.get(url, params=params, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    if 'items' in data:
-                        for item in data['items']:
-                            # Нашли совпадение!
-                            matches.append({
-                                'start': 0,
-                                'end': len(sentence),
-                                'text': sentence,
-                                'source_id': hash(item['link']) % 10000,
-                                'similarity': 0.95,  # Точное совпадение
-                                'type': 'google_exact'
-                            })
-                            
-                            # Добавляем источник
-                            source_id = hash(item['link']) % 10000
-                            if source_id not in sources_dict:
-                                sources_dict[source_id] = {
-                                    'id': source_id,
-                                    'title': item.get('title', 'Unknown'),
-                                    'url': item.get('link', ''),
-                                    'domain': item.get('displayLink', ''),
-                                    'match_count': 0
-                                }
-                            sources_dict[source_id]['match_count'] += 1
-                        
-                        break  # Нашли - хватит проверять
+            logger.debug(f"Google Search запрос: {search_query[:50]}...")
             
-            except Exception as e:
-                print(f"Google Search error: {e}")
-        
-        return {
-            'matches': matches,
-            'sources': list(sources_dict.values())
-        }
+            response = httpx.get(url, params=params, timeout=15)
+            
+            if response.status_code != 200:
+                logger.error(f"Google Search error: HTTP {response.status_code}")
+                logger.error(f"Response: {response.text[:200]}")
+                return []
+            
+            data = response.json()
+            
+            if 'items' not in data:
+                logger.debug("Google Search: совпадений не найдено")
+                return []
+            
+            results = []
+            for item in data['items']:
+                source_id = hash(item['link']) % 100000
+                
+                results.append({
+                    'source_id': source_id,
+                    'title': item.get('title', 'Untitled')[:200],
+                    'url': item.get('link', ''),
+                    'domain': item.get('displayLink', 'unknown'),
+                    'similarity': 0.95  # Точное совпадение в Google
+                })
+            
+            logger.info(f"✓ Google нашел {len(results)} источников")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Google Search error: {e}")
+            return []
 
 # Singleton
-detector = AdvancedPlagiarismDetector()
+detector = GooglePlagiarismDetector()

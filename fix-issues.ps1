@@ -3,7 +3,7 @@
     Auto-fix all issues found by inspection
 #>
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $projectRoot = $PSScriptRoot
 
 Write-Host "`n========================================================================" -ForegroundColor Cyan
@@ -16,12 +16,18 @@ Write-Host "====================================================================
 
 Write-Host "[1/4] Creating missing report page..." -ForegroundColor Yellow
 
-$reportDir = Join-Path $projectRoot "frontend\app\report\[id]"
-$reportFile = Join-Path $reportDir "page.tsx"
+$reportDir = Join-Path $projectRoot "frontend\app\report"
+$reportIdDir = Join-Path $reportDir "[id]"
 
-if (-not (Test-Path $reportDir)) {
+if (-not (Test-Path -LiteralPath $reportDir)) {
     New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
 }
+
+if (-not (Test-Path -LiteralPath $reportIdDir)) {
+    New-Item -ItemType Directory -LiteralPath $reportIdDir -Force | Out-Null
+}
+
+$reportFile = Join-Path $reportIdDir "page.tsx"
 
 $reportPageContent = @'
 'use client'
@@ -131,7 +137,6 @@ export default function ReportPage() {
   return (
     <div className={`min-h-screen bg-gradient-to-br ${getOriginalityBg(result.originality)} py-12 px-4`}>
       <div className="max-w-5xl mx-auto">
-        {/* Header Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8">
           <div className="text-center">
             <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
@@ -140,7 +145,6 @@ export default function ReportPage() {
             <p className="text-gray-400 text-sm font-mono">ID: {result.task_id}</p>
           </div>
 
-          {/* Originality Score */}
           <div className="mt-10 text-center relative">
             <div className="inline-block relative">
               <div className={`text-8xl font-black ${getOriginalityColor(result.originality)} drop-shadow-lg`}>
@@ -157,7 +161,6 @@ export default function ReportPage() {
             <p className="text-gray-600 mt-4 text-lg font-semibold">Оригинальность текста</p>
           </div>
 
-          {/* Stats Grid */}
           <div className="grid grid-cols-3 gap-6 mt-10">
             <div className="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200">
               <div className="text-3xl font-bold text-blue-700">{result.total_words}</div>
@@ -178,7 +181,6 @@ export default function ReportPage() {
           </div>
         </div>
 
-        {/* Matches */}
         {result.matches && result.matches.length > 0 && (
           <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8">
             <h2 className="text-3xl font-bold mb-6 flex items-center gap-3">
@@ -208,7 +210,6 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* Sources */}
         {result.sources && result.sources.length > 0 && (
           <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8">
             <h2 className="text-3xl font-bold mb-6 flex items-center gap-3">
@@ -248,7 +249,6 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* No matches */}
         {(!result.matches || result.matches.length === 0) && (
           <div className="bg-white rounded-2xl shadow-2xl p-12 mb-8 text-center">
             <div className="text-6xl mb-4">✅</div>
@@ -257,7 +257,6 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* Actions */}
         <div className="flex gap-4 justify-center">
           <button 
             onClick={() => router.push('/')}
@@ -278,8 +277,8 @@ export default function ReportPage() {
 }
 '@
 
-$reportPageContent | Out-File -FilePath $reportFile -Encoding UTF8
-Write-Host "  [OK] Created: $reportFile" -ForegroundColor Green
+Set-Content -LiteralPath $reportFile -Value $reportPageContent -Encoding UTF8
+Write-Host "  [OK] Created: frontend\app\report\[id]\page.tsx" -ForegroundColor Green
 
 # ============================================================================
 # 2. REMOVE PRINT STATEMENTS
@@ -287,29 +286,74 @@ Write-Host "  [OK] Created: $reportFile" -ForegroundColor Green
 
 Write-Host "`n[2/4] Removing print statements from Python files..." -ForegroundColor Yellow
 
-$pythonFiles = Get-ChildItem -Path (Join-Path $projectRoot "backend\public-api\app") -Filter "*.py" -Recurse
+$backendPath = Join-Path $projectRoot "backend\public-api\app"
+if (Test-Path $backendPath) {
+    $pythonFiles = Get-ChildItem -Path $backendPath -Filter "*.py" -Recurse
 
-$printCount = 0
-foreach ($file in $pythonFiles) {
-    $content = Get-Content $file.FullName -Raw
-    $originalContent = $content
+    $printCount = 0
+    $totalPrints = 0
     
-    # Replace print() with logger
-    $content = $content -replace 'print\((.*?)\)', 'logger.info($1)'
-    
-    if ($content -ne $originalContent) {
-        # Add logging import if not present
-        if ($content -notmatch 'import logging') {
-            $content = "import logging`nlogger = logging.getLogger(__name__)`n`n" + $content
+    foreach ($file in $pythonFiles) {
+        try {
+            $content = Get-Content $file.FullName -Raw -Encoding UTF8
+            
+            # Skip empty files
+            if ([string]::IsNullOrWhiteSpace($content)) {
+                continue
+            }
+            
+            # Count prints
+            $matches = [regex]::Matches($content, 'print\(')
+            $prints = $matches.Count
+            
+            if ($prints -gt 0) {
+                $totalPrints += $prints
+                
+                # Replace print() with logger.info()
+                $newContent = $content -replace 'print\(([^)]+)\)', 'logger.info($1)'
+                
+                # Add logging import if not present
+                if ($newContent -notmatch 'import logging') {
+                    # Find first import statement
+                    $lines = $newContent -split "`r?`n"
+                    $insertIndex = 0
+                    
+                    for ($i = 0; $i -lt $lines.Count; $i++) {
+                        if ($lines[$i] -match '^(from |import )' -and $insertIndex -eq 0) {
+                            $insertIndex = $i
+                            break
+                        }
+                    }
+                    
+                    if ($insertIndex -gt 0) {
+                        # Insert after first import
+                        $beforeImport = $lines[0..$insertIndex]
+                        $afterImport = $lines[($insertIndex + 1)..($lines.Count - 1)]
+                        
+                        $newLines = $beforeImport + @('import logging', 'logger = logging.getLogger(__name__)', '') + $afterImport
+                        $newContent = $newLines -join "`n"
+                    } else {
+                        # Insert at beginning
+                        $newContent = "import logging`nlogger = logging.getLogger(__name__)`n`n" + $newContent
+                    }
+                }
+                
+                Set-Content -Path $file.FullName -Value $newContent -Encoding UTF8 -NoNewline
+                $printCount++
+                Write-Host "  [OK] Fixed $prints prints in: $($file.Name)" -ForegroundColor Green
+            }
         }
-        
-        $content | Out-File -FilePath $file.FullName -Encoding UTF8
-        $printCount++
-        Write-Host "  [OK] Fixed: $($file.Name)" -ForegroundColor Green
+        catch {
+            Write-Host "  [!!] Error processing $($file.Name): $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    if ($printCount -eq 0) {
+        Write-Host "  [OK] No print statements found" -ForegroundColor Green
+    } else {
+        Write-Host "  [OK] Fixed $totalPrints print statements in $printCount files" -ForegroundColor Green
     }
 }
-
-Write-Host "  [OK] Replaced $printCount print statements with logger" -ForegroundColor Green
 
 # ============================================================================
 # 3. UPDATE ENV EXAMPLES
@@ -322,25 +366,37 @@ $backendEnv = Join-Path $projectRoot "backend\public-api\.env.example"
 if (Test-Path $backendEnv) {
     $envContent = Get-Content $backendEnv -Raw
     
+    $updated = $false
+    
     if ($envContent -notmatch 'GOOGLE_SEARCH_API_KEY') {
-        Add-Content $backendEnv "`nGOOGLE_SEARCH_API_KEY=your_google_api_key_here"
+        Add-Content $backendEnv "`nGOOGLE_SEARCH_API_KEY=your_google_api_key_here" -NoNewline
         Write-Host "  [OK] Added GOOGLE_SEARCH_API_KEY to backend .env.example" -ForegroundColor Green
+        $updated = $true
     }
     
     if ($envContent -notmatch 'GOOGLE_SEARCH_CX') {
-        Add-Content $backendEnv "GOOGLE_SEARCH_CX=your_search_engine_id_here"
+        Add-Content $backendEnv "`nGOOGLE_SEARCH_CX=your_search_engine_id_here" -NoNewline
         Write-Host "  [OK] Added GOOGLE_SEARCH_CX to backend .env.example" -ForegroundColor Green
+        $updated = $true
+    }
+    
+    if (-not $updated) {
+        Write-Host "  [OK] Backend .env.example already up to date" -ForegroundColor Green
     }
 }
 
 # Frontend .env.example
 $frontendEnv = Join-Path $projectRoot "frontend\.env.example"
-if (Test-Path $frontendEnv) {
+if (-not (Test-Path $frontendEnv)) {
+    "NEXT_PUBLIC_API_URL=http://localhost:8000" | Out-File -FilePath $frontendEnv -Encoding UTF8 -NoNewline
+    Write-Host "  [OK] Created frontend .env.example" -ForegroundColor Green
+} else {
     $envContent = Get-Content $frontendEnv -Raw
-    
     if ($envContent -notmatch 'NEXT_PUBLIC_API_URL') {
-        "NEXT_PUBLIC_API_URL=http://localhost:8000" | Out-File -FilePath $frontendEnv -Encoding UTF8
-        Write-Host "  [OK] Created frontend .env.example" -ForegroundColor Green
+        Add-Content $frontendEnv "`nNEXT_PUBLIC_API_URL=http://localhost:8000" -NoNewline
+        Write-Host "  [OK] Updated frontend .env.example" -ForegroundColor Green
+    } else {
+        Write-Host "  [OK] Frontend .env.example already up to date" -ForegroundColor Green
     }
 }
 
@@ -349,17 +405,30 @@ if (Test-Path $frontendEnv) {
 # ============================================================================
 
 Write-Host "`n[4/4] Running inspection again..." -ForegroundColor Yellow
-Write-Host ""
 
-& (Join-Path $projectRoot "inspect-project.ps1")
+$inspectScript = Join-Path $projectRoot "inspect-project.ps1"
+if (Test-Path $inspectScript) {
+    Write-Host ""
+    & $inspectScript
+}
 
 Write-Host "`n========================================================================" -ForegroundColor Cyan
 Write-Host "                         FIX COMPLETED!                                 " -ForegroundColor Cyan
 Write-Host "========================================================================`n" -ForegroundColor Cyan
 
+Write-Host "Summary of changes:" -ForegroundColor Yellow
+Write-Host "  - Created report page: frontend/app/report/[id]/page.tsx" -ForegroundColor Green
+Write-Host "  - Removed $totalPrints print statements from $printCount files" -ForegroundColor Green
+Write-Host "  - Updated .env.example files" -ForegroundColor Green
+Write-Host ""
+
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "  1. Review changes: git diff" -ForegroundColor White
-Write-Host "  2. Test locally: cd frontend && npm run dev" -ForegroundColor White
-Write-Host "  3. Commit: git add . && git commit -m 'fix: auto-fix all issues'" -ForegroundColor White
-Write-Host "  4. Push: git push" -ForegroundColor White
+Write-Host "  1. Review: " -NoNewline -ForegroundColor White
+Write-Host "git diff" -ForegroundColor Cyan
+Write-Host "  2. Test: " -NoNewline -ForegroundColor White
+Write-Host "cd frontend && npm run dev" -ForegroundColor Cyan
+Write-Host "  3. Commit: " -NoNewline -ForegroundColor White
+Write-Host "git add . && git commit -m 'fix: auto-fix issues (report page, logging)'" -ForegroundColor Cyan
+Write-Host "  4. Push: " -NoNewline -ForegroundColor White
+Write-Host "git push" -ForegroundColor Cyan
 Write-Host ""

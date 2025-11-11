@@ -1,4 +1,7 @@
 ﻿"""Database Models (Render-safe: fallback to SQLite if DATABASE_URL empty)"""
+import logging
+logger = logging.getLogger(__name__)
+
 from sqlalchemy import Column, String, Float, Integer, DateTime, JSON, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -39,20 +42,20 @@ DATABASE_URL = _pick_database_url()
 
 # Fallback на SQLite даже в production, чтобы сервис поднялся
 if not DATABASE_URL:
-    print("⚠️ DATABASE_URL is empty. Fallback to SQLite (ephemeral on Render).")
+    logger.info("⚠️ DATABASE_URL is empty. Fallback to SQLite (ephemeral on Render).")
     DATABASE_URL = "sqlite:///./antiplagiat.db"
 
 DATABASE_URL = _normalize(DATABASE_URL)
 
-print(f"📊 Database: {'SQLite' if DATABASE_URL.startswith('sqlite') else 'PostgreSQL'}")
+logger.info(f"📊 Database: {'SQLite' if DATABASE_URL.startswith('sqlite') else 'PostgreSQL'}")
 try:
     if DATABASE_URL.startswith("sqlite"):
         engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, echo=False)
     else:
         engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=20, echo=False)
-    print("✓ Database engine created")
+    logger.info("✓ Database engine created")
 except Exception as e:
-    print(f"❌ Database error: {e}")
+    logger.info(f"❌ Database error: {e}")
     raise
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -67,7 +70,8 @@ def get_db():
 def init_db():
     try:
         Base.metadata.create_all(bind=engine)
-        print("✓ Database tables created")
+        logger.info("✓ Database tables created")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        logger.info(f"❌ Error: {e}")
         raise
+

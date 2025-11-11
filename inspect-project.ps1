@@ -395,7 +395,7 @@ function Test-CriticalIssues {
     Write-SubSection "Frontend Report Page"
     
     $reportPage = Join-Path $projectRoot "frontend\app\report\[id]\page.tsx"
-    if (Test-Path $reportPage) {
+    if (Test-Path -LiteralPath $reportPage) {
         Write-OK "report/[id]/page.tsx found"
     } else {
         Write-ERR "report/[id]/page.tsx MISSING"

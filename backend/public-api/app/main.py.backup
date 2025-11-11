@@ -15,12 +15,36 @@ from app.services.detector import detector
 from app.models import CheckResult, get_db, init_db
 
 # ============================================
-# LOGGING
+# LOGGING CONFIGURATION
 # ============================================
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+# ============================================
+# LOGGING CONFIGURATION
+# ============================================
+logging.basicConfig(
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+# ============================================
+# LOGGING CONFIGURATION
+# ============================================
+logging.basicConfig(
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+
 )
 logger = logging.getLogger(__name__)
 
@@ -33,6 +57,15 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
+logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+logger.info(f"📍 Environment: {settings.ENVIRONMENT}")
+
+logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+logger.info(f"📍 Environment: {settings.ENVIRONMENT}")
+
+logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+logger.info(f"📍 Environment: {settings.ENVIRONMENT}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS_LIST,
@@ -44,8 +77,6 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     init_db()
-    logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-    logger.info(f"📍 Environment: {settings.ENVIRONMENT}")
     logger.info("✓ Database initialized")
 
 # Models
@@ -114,18 +145,29 @@ async def create_check(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    task_id = str(uuid.uuid4())
+    """
+    Проверка текста на плагиат
     
+    Fast режим: быстрая эвристика (mock)
+    Deep режим: Google Search (реальная детекция)
+    """
+    task_id = str(uuid.uuid4())
+
     logger.info(f"📝 New check: {task_id} | mode={request.mode} | len={len(request.text)}")
+
     start_time = datetime.utcnow()
     
+    # Анализ через новый детектор
     result = detector.analyze(request.text, mode=request.mode)
-    
+
     duration = (datetime.utcnow() - start_time).total_seconds()
+
+    logger.info(f"✓ Check {task_id}: {duration:.2f}s | {result.get('originality')}% | matches={len(result.get('matches', []))}")
     
     total_words = len(request.text.split())
     total_chars = len(request.text)
     
+    # Сохраняем в БД
     db_result = CheckResult(
         task_id=task_id,
         status="completed",
@@ -142,7 +184,8 @@ async def create_check(
     
     estimated_time = 15 if request.mode == "deep" else 3
     
-    logger.info(f"✓ Check {task_id}: {duration:.2f}s | {result.get('originality')}% | matches={len(result.get('matches', []))}")
+    google_status = "✓" if result.get('google_used') else "✗"
+    logger.info(f"{google_status} Check {task_id}: {result.get('originality')}%, mode={request.mode}, google={result.get('google_used', False)}, matches={len(result.get('matches', []))}")
     
     return CheckResponse(
         task_id=task_id,
@@ -152,6 +195,7 @@ async def create_check(
 
 @app.get("/api/v1/check/{task_id}", response_model=CheckResultResponse)
 async def get_check_result(task_id: str, db: Session = Depends(get_db)):
+    """Получение результатов проверки"""
     result = db.query(CheckResult).filter(CheckResult.task_id == task_id).first()
     if not result:
         raise HTTPException(status_code=404, detail="Check not found")
@@ -166,11 +210,12 @@ async def get_check_result(task_id: str, db: Session = Depends(get_db)):
         sources=result.sources,
         created_at=result.created_at.isoformat() if result.created_at else None,
         ai_powered=result.ai_powered,
-        note="Deep режим использует Google Search для реальной детекции" if result.ai_powered else "Fast режим"
+        note="Deep режим использует Google Search для реальной детекции" if result.ai_powered else "Fast режим - для точной проверки используйте Deep"
     )
 
 @app.delete("/api/v1/check/{task_id}")
 async def delete_check(task_id: str, db: Session = Depends(get_db)):
+    """Удаление проверки"""
     result = db.query(CheckResult).filter(CheckResult.task_id == task_id).first()
     if result:
         db.delete(result)
@@ -181,3 +226,6 @@ async def delete_check(task_id: str, db: Session = Depends(get_db)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
+
+

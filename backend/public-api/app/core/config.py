@@ -1,7 +1,4 @@
-"""
-Configuration management
-Loads settings from environment variables
-"""
+﻿"""Configuration management"""
 from pydantic_settings import BaseSettings
 from typing import List
 import os
@@ -15,6 +12,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
+    PORT: int = 8001
     
     # Security
     JWT_SECRET: str = "change-me-in-production"
@@ -28,13 +26,17 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
     
     # Database
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/antiplagiat"
+    DATABASE_URL: str = "sqlite:///./antiplagiat.db"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
+    # Google Search API
+    GOOGLE_SEARCH_API_KEY: str = ""
+    GOOGLE_SEARCH_CX: str = ""
+    
     # AI Configuration
-    OPENROUTER_API_KEY: str
+    OPENROUTER_API_KEY: str = ""
     AI_MODEL: str = "google/gemini-2.0-flash-exp:free"
     AI_BASE_URL: str = "https://openrouter.ai/api/v1/chat/completions"
     AI_TIMEOUT: int = 30
@@ -60,13 +62,10 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "ignore"  # Игнорировать дополнительные поля
 
 @lru_cache()
 def get_settings() -> Settings:
-    """
-    Cached settings instance
-    """
     return Settings()
 
-# Global settings instance
 settings = get_settings()

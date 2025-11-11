@@ -1,58 +1,37 @@
-"""
-Plagiarism Detection - ИСПРАВЛЕННАЯ версия
-Проблема: не учитывалась similarity при расчете оригинальности
-Решение: matched_chars умножаем на similarity
-"""
+﻿# -*- coding: utf-8 -*-
+"""Plagiarism Detection - Google Search Integration"""
 import re
-import os
-from typing import List, Dict, Optional
+from typing import List, Dict
 import logging
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
 class GooglePlagiarismDetector:
-    """
-    Детектор плагиата на основе Google Search
-    """
     
     def __init__(self):
-        self.google_api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
-        self.google_cx = os.getenv("GOOGLE_SEARCH_CX", "")
+        from app.core.config import settings
         
-        if self.google_api_key and self.google_cx:
-            logger.info("✓ Google Search API настроен")
-        else:
-            logger.warning("⚠️  Google Search API не настроен")
+        self.google_api_key = settings.GOOGLE_SEARCH_API_KEY
+        self.google_cx = settings.GOOGLE_SEARCH_CX
+        
+        logger.info("=" * 60)
+        logger.info("DETECTOR INIT")
+        logger.info(f"API Key: {bool(self.google_api_key)}")
+        logger.info(f"CX: {self.google_cx}")
+        logger.info("=" * 60)
     
     def analyze(self, text: str, mode: str = "fast") -> Dict:
-        """Главный метод анализа"""
+        logger.info(f"analyze() mode={mode}, len={len(text)}")
         
-        if mode == "deep":
+        if mode == "deep" and self.google_api_key and self.google_cx:
+            logger.info("Using Google Search")
             return self._google_search_analysis(text)
         else:
             return self._fast_mock_analysis(text)
     
     def _fast_mock_analysis(self, text: str) -> Dict:
-        """Fast режим: простая mock проверка"""
-        words = text.split()
-        
-        common_phrases = [
-            "искусственный интеллект", "машинное обучение", "нейронные сети",
-            "глубокое обучение", "обработка естественного языка",
-            "neural network", "deep learning", "machine learning",
-            "artificial intelligence"
-        ]
-        
-        text_lower = text.lower()
-        found_phrases = sum(1 for phrase in common_phrases if phrase in text_lower)
-        
-        if found_phrases >= 3:
-            originality = 75.0
-        elif found_phrases >= 2:
-            originality = 85.0
-        else:
-            originality = 92.0
-        
+        originality = 92.0
         return {
             'originality': originality,
             'matches': [],
@@ -62,49 +41,40 @@ class GooglePlagiarismDetector:
         }
     
     def _google_search_analysis(self, text: str) -> Dict:
-        """
-        Deep режим: Google Search с ПРАВИЛЬНЫМ расчетом оригинальности
-        """
-        if not self.google_api_key or not self.google_cx:
-            logger.error("Google Search API не настроен!")
-            return {
-                'originality': 0.0,
-                'matches': [],
-                'sources': [],
-                'google_used': False,
-                'error': 'Google Search API не настроен'
-            }
+        from app.core.cache import get_cached_google_search, cache_google_search
+        
+        logger.info("Google Search analysis...")
         
         total_chars = len(text)
-        
-        # Разбиваем на предложения
         sentences = self._split_sentences(text)
+        
+        logger.info(f"Sentences: {len(sentences)}")
         
         if not sentences:
             return {
                 'originality': 100.0,
                 'matches': [],
                 'sources': [],
-                'google_used': False,
-                'error': 'Текст слишком короткий'
+                'google_used': False
             }
         
-        # Проверяем в Google
         matches = []
         sources_dict = {}
         
-        sentences_to_check = sentences[:5]
-        
-        logger.info(f"Проверяем {len(sentences_to_check)} предложений через Google...")
-        
-        for sentence in sentences_to_check:
+        for i, sentence in enumerate(sentences[:5], 1):
             if len(sentence) < 50:
                 continue
             
-            google_results = self._search_in_google(sentence)
+            # Логируем первые 50 символов
+            preview = sentence[:50] if len(sentence) > 50 else sentence
+            logger.info(f"Sentence {i}: checking...")
             
-            if google_results:
-                for result in google_results:
+            results = self._search_in_google(sentence)
+            
+            logger.info(f"Found {len(results)} results")
+            
+            if results:
+                for result in results:
                     matches.append({
                         'start': text.find(sentence),
                         'end': text.find(sentence) + len(sentence),
@@ -125,37 +95,23 @@ class GooglePlagiarismDetector:
                         }
                     sources_dict[source_id]['match_count'] += 1
         
-        # ============================================================================
-        # ИСПРАВЛЕННЫЙ РАСЧЕТ ОРИГИНАЛЬНОСТИ
-        # ============================================================================
         if matches:
-            # Убираем дубликаты
-            unique_matches = {}
-            for match in matches:
-                key = (match['start'], match['end'])
-                if key not in unique_matches or unique_matches[key]['similarity'] < match['similarity']:
-                    unique_matches[key] = match
+            unique = {}
+            for m in matches:
+                key = (m['start'], m['end'])
+                if key not in unique or unique[key]['similarity'] < m['similarity']:
+                    unique[key] = m
             
-            matches = list(unique_matches.values())
+            matches = list(unique.values())
+            weighted = sum((m['end'] - m['start']) * m['similarity'] for m in matches)
+            originality = max(0, min(100, round(100 - (weighted / total_chars * 100), 2)))
             
-            # ПРАВИЛЬНЫЙ РАСЧЕТ: учитываем similarity!
-            # Взвешенная сумма: длина * схожесть
-            weighted_matched_chars = sum(
-                (m['end'] - m['start']) * m['similarity'] 
-                for m in matches
-            )
-            
-            # Оригинальность = 100% - (взвешенные совпадения / общая длина * 100)
-            originality = max(0, min(100, round(100 - (weighted_matched_chars / total_chars * 100), 2)))
-            
-            logger.info(f"Расчет: {len(matches)} совпадений, weighted_chars={weighted_matched_chars:.1f}, total={total_chars}, originality={originality}%")
+            logger.info(f"Matches: {len(matches)}, originality={originality}%")
         else:
-            # Ничего не найдено
             originality = 95.0
+            logger.info("No matches, originality=95%")
         
         sources = list(sources_dict.values())
-        
-        logger.info(f"✓ Результат: {originality}% оригинальности, {len(matches)} совпадений, {len(sources)} источников")
         
         return {
             'originality': originality,
@@ -166,54 +122,78 @@ class GooglePlagiarismDetector:
         }
     
     def _split_sentences(self, text: str) -> List[str]:
-        """Разбивка на предложения"""
-        sentences = re.split(r'[.!?]+', text)
-        return [s.strip() for s in sentences if len(s.strip()) > 30]
+        parts = text.replace('?', '.').replace('!', '.').split('.')
+        sentences = [s.strip() for s in parts if len(s.strip()) > 40]
+        
+        if not sentences and len(text.strip()) > 40:
+            sentences = [text.strip()]
+        
+        logger.info(f"Split into {len(sentences)} sentences")
+        
+        return sentences
     
     def _search_in_google(self, query: str) -> List[Dict]:
-        """Поиск в Google"""
+        from app.core.cache import get_cached_google_search, cache_google_search
+        
+        cached = get_cached_google_search(query)
+        if cached:
+            logger.info("Cache HIT")
+            return cached
+        
         try:
             import httpx
             
             url = "https://www.googleapis.com/customsearch/v1"
+            
+            # Обрезаем запрос до 150 символов
             search_query = query[:150]
             
             params = {
                 'key': self.google_api_key,
                 'cx': self.google_cx,
-                'q': f'"{search_query}"',
+                'q': search_query,
                 'num': 5
             }
             
+            logger.info("Google API call...")
+            
+            # httpx автоматически кодирует UTF-8
             response = httpx.get(url, params=params, timeout=15)
             
+            logger.info(f"HTTP {response.status_code}")
+            
             if response.status_code != 200:
-                logger.error(f"Google Search error: HTTP {response.status_code}")
+                logger.error(f"Error: {response.text[:200]}")
                 return []
             
             data = response.json()
             
             if 'items' not in data:
+                if 'error' in data:
+                    logger.error(f"Google API error: {data['error']}")
+                else:
+                    logger.info("No results found")
                 return []
             
-            results = []
-            for item in data['items']:
-                source_id = hash(item['link']) % 100000
-                
-                results.append({
-                    'source_id': source_id,
+            results = [
+                {
+                    'source_id': hash(item['link']) % 100000,
                     'title': item.get('title', 'Untitled')[:200],
                     'url': item.get('link', ''),
                     'domain': item.get('displayLink', 'unknown'),
-                    'similarity': 0.95  # Точное совпадение в Google
-                })
+                    'similarity': 0.95
+                }
+                for item in data['items']
+            ]
             
-            logger.info(f"✓ Google нашел {len(results)} источников")
+            cache_google_search(query, results)
+            
+            logger.info(f"Found {len(results)} sources")
+            
             return results
             
         except Exception as e:
-            logger.error(f"Google Search error: {e}")
+            logger.error(f"Exception: {e}")
             return []
 
-# Singleton
 detector = GooglePlagiarismDetector()

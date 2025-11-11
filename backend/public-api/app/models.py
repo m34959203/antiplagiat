@@ -1,7 +1,5 @@
-"""
-Database Models with SQLite fallback
-"""
-from sqlalchemy import Column, String, Float, Integer, Text, DateTime, JSON, create_engine
+﻿"""Database Models"""
+from sqlalchemy import Column, String, Float, Integer, DateTime, JSON, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -10,7 +8,6 @@ import os
 Base = declarative_base()
 
 class CheckResult(Base):
-    """Результат проверки на плагиат"""
     __tablename__ = "check_results"
     
     task_id = Column(String, primary_key=True, index=True)
@@ -24,15 +21,10 @@ class CheckResult(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(String, nullable=True, index=True)
 
-# Use SQLite for now (PostgreSQL connection issues)
+# Database URL
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./antiplagiat.db")
 
-# Force SQLite if PostgreSQL URL is problematic
-if "dpg-d48gfj3e5dus73c6qqp0-a" in DATABASE_URL:
-    print("⚠️  Detected problematic PostgreSQL URL, using SQLite instead")
-    DATABASE_URL = "sqlite:///./antiplagiat.db"
-
-print(f"📊 Using database: {'SQLite' if 'sqlite' in DATABASE_URL else 'PostgreSQL'}")
+print(f"📊 Database: {'SQLite' if 'sqlite' in DATABASE_URL else 'PostgreSQL'}")
 
 try:
     if "sqlite" in DATABASE_URL:
@@ -49,20 +41,14 @@ try:
             max_overflow=20,
             echo=False
         )
-    print("✓ Database engine created successfully")
+    print("✓ Database engine created")
 except Exception as e:
     print(f"❌ Database error: {e}")
-    print("⚠️  Falling back to SQLite")
-    DATABASE_URL = "sqlite:///./antiplagiat.db"
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False}
-    )
+    raise
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
-    """Dependency для FastAPI"""
     db = SessionLocal()
     try:
         yield db
@@ -70,9 +56,9 @@ def get_db():
         db.close()
 
 def init_db():
-    """Инициализация БД"""
     try:
         Base.metadata.create_all(bind=engine)
         print("✓ Database tables created")
     except Exception as e:
-        print(f"❌ Error creating tables: {e}")
+        print(f"❌ Error: {e}")
+        raise

@@ -14,9 +14,7 @@ from app.core.config import settings
 from app.services.detector import detector
 from app.models import CheckResult, get_db, init_db
 
-# ============================================
-# LOGGING
-# ============================================
+# Logging
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
@@ -33,6 +31,11 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
+# ============================================
+# CORS CONFIGURATION
+# ============================================
+logger.info(f"Configuring CORS with origins: {settings.ALLOWED_ORIGINS_LIST}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS_LIST,
@@ -46,6 +49,7 @@ async def startup_event():
     init_db()
     logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"📍 Environment: {settings.ENVIRONMENT}")
+    logger.info(f"🌐 CORS Origins: {settings.ALLOWED_ORIGINS_LIST}")
     logger.info("✓ Database initialized")
 
 # Models
@@ -89,7 +93,8 @@ async def root():
         "environment": settings.ENVIRONMENT,
         "google_search_enabled": bool(detector.google_api_key and detector.google_cx),
         "status": "running",
-        "docs": "/docs"
+        "docs": "/docs",
+        "cors_origins": settings.ALLOWED_ORIGINS_LIST
     }
 
 @app.get("/health")
@@ -105,7 +110,9 @@ async def health(db: Session = Depends(get_db)):
         "timestamp": datetime.utcnow().isoformat(),
         "google_search_enabled": bool(detector.google_api_key and detector.google_cx),
         "database": db_status,
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
+        "cors_enabled": True,
+        "allowed_origins": settings.ALLOWED_ORIGINS_LIST
     }
 
 @app.post("/api/v1/check", response_model=CheckResponse)
@@ -166,7 +173,7 @@ async def get_check_result(task_id: str, db: Session = Depends(get_db)):
         sources=result.sources,
         created_at=result.created_at.isoformat() if result.created_at else None,
         ai_powered=result.ai_powered,
-        note="Deep режим использует Google Search для реальной детекции" if result.ai_powered else "Fast режим"
+        note="Deep режим использует Google Search" if result.ai_powered else "Fast режим"
     )
 
 @app.delete("/api/v1/check/{task_id}")
